@@ -1,0 +1,120 @@
+---
+# tasks/main.yml
+
+- name: Update and upgrade the system
+  apt:
+    update_cache: yes
+    upgrade: dist
+
+- name: Install OpenJDK 11
+  apt:
+    name: openjdk-11-jre-headless
+    state: present
+  
+
+- name: Create directory for ScyllaDB keyrings
+  file:
+    path: "{{ scylla_keyring_dir }}"
+    state: directory
+    mode: 0755
+  
+
+- name: Import ScyllaDB GPG key
+  command: >
+    gpg --homedir /tmp --no-default-keyring
+    --keyring {{ scylla_keyring_dir }}/scylladb.gpg
+    --keyserver hkp://keyserver.ubuntu.com:80
+    --recv-keys {{ scylla_gpg_key }}
+ 
+
+- name: Download and add ScyllaDB repository
+  get_url:
+    url: "{{ scylla_repo_url }}"
+    dest: "/etc/apt/sources.list.d/scylla.list"
+    mode: 0644
+ 
+
+- name: Update APT after adding ScyllaDB repository
+  apt:
+    update_cache: yes
+
+- name: Install ScyllaDB
+  apt:
+    name: "{{ scylla_package }}"
+    state: present
+
+- name: Run Scylla setup
+  command: "{{ scylla_setup_command }}"
+ 
+ 
+- name: Enable ScyllaDB server to start at boot
+  systemd:
+    name: "{{ scylla_service }}"
+    enabled: "{{ scylla_service_enabled }}"
+ 
+- name: Generating cfg file
+  template:
+    src: myconfig.j2
+    dest: /etc/scylla/scylla.yaml
+  notify: restart scylla
+
+- name: Wait for ScyllaDB service to become active
+  wait_for:
+    host: 127.0.0.1
+    port: 9042
+    timeout: 60
+
+- name: Check if ScyllaDB user exists
+  shell: |
+    echo "LIST USERS;" | cqlsh 127.0.0.1 9042 -u cassandra -p cassandra | grep -w scylladb
+  register: user_check
+  ignore_errors: true
+
+- name: Create ScyllaDB user
+  shell: |
+    echo "CREATE USER scylladb WITH PASSWORD 'password' SUPERUSER;" | cqlsh 127.0.0.1 9042 -u cassandra -p cassandra
+  when: user_check.rc != 0
+
+- name: Check if ScyllaDB keyspace exists
+  shell: |
+    echo "DESCRIBE KEYSPACES;" | cqlsh 127.0.0.1 9042 -u cassandra -p cassandra | grep -w employee_db
+  register: keyspace_check
+  ignore_errors: true
+
+- name: Create ScyllaDB keyspace
+  shell: |
+    echo "CREATE KEYSPACE employee_db
+    WITH REPLICATION = { 'class': 'SimpleStrategy', 'replication_factor': 1 };" | cqlsh 127.0.0.1 9042 -u cassandra -p cassandra
+  when: keyspace_check.rc != 0
+
+- name: Check if employee_info table exists
+  shell: |
+    echo "USE employee_db; DESCRIBE TABLES;" | cqlsh 127.0.0.1 9042 -u cassandra -p cassandra | grep -w employee_info
+  register: table_check
+  ignore_errors: true
+
+- name: Create employee_info table
+  shell: |
+    echo "USE employee_db;
+    CREATE TABLE IF NOT EXISTS employee_info (
+        id INT PRIMARY KEY,
+        joining_date DATE,
+        address TEXT,
+        department TEXT,
+        designation TEXT,
+        email TEXT,
+        name TEXT,
+        office_location TEXT,
+        phone_number BIGINT,
+        status TEXT
+    );" | cqlsh 127.0.0.1 9042 -u cassandra -p cassandra
+  when: table_check.rc != 0
+
+- name: Insert a record into employee_info table
+  shell: |
+    echo "USE employee_db;
+    INSERT INTO employee_info (id, joining_date, address, email, name, phone_number, status)
+    VALUES (123, '2024-11-12', 'tarsa', 'pratham@gmail.com', 'pratham', 8459802939, 'Current Employee');" | cqlsh 127.0.0.1 9042 -u cassandra -p cassandra
+  args:
+    executable: /bin/bash
+

@@ -1,0 +1,26 @@
+---
+# defaults/main.yml
+
+# URL of the ScyllaDB repository
+scylla_repo_url: "http://downloads.scylladb.com/deb/debian/scylla-6.2.list"
+
+# GPG key ID for ScyllaDB
+scylla_gpg_key: "a43e06657bac99e3"
+
+# Directory for storing GPG keyrings
+scylla_keyring_dir: "/etc/apt/keyrings"
+
+# ScyllaDB package name
+scylla_package: "scylla"
+
+# ScyllaDB service name
+scylla_service: "scylla-server"
+
+# Whether to enable the service
+scylla_service_enabled: true
+
+# ScyllaDB setup command
+scylla_setup_command: " /opt/scylladb/scripts/scylla_io_setup"
+
+# Rpc add
+All_port: "127.0.0.1"
